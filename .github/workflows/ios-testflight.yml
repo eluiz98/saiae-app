@@ -50,14 +50,17 @@ jobs:
           # Colar o .p8 pelo navegador pode juntar tudo numa linha, trazer \r/espaços
           # ou perder o cabeçalho, e o xcodebuild recusa (invalidPEMDocument). Por
           # isso só o base64 do secret é aproveitado: vira DER e o openssl regrava
-          # o PEM inteiro.
+          # o PEM inteiro. -topk8 força PKCS#8 (formato do .p8 da Apple): o LibreSSL
+          # do macOS pode gravar SEC1, que o xcodebuild aceita mas o altool não.
           CORPO=$(printf '%s' "$ASC_KEY_P8" | sed -e 's/-----[A-Z ]*-----//g' | tr -d ' \r\n\t')
           if ! printf '%s' "$CORPO" | openssl base64 -d -A > "$RUNNER_TEMP/asc/chave.der" \
-            || ! openssl pkey -inform DER -in "$RUNNER_TEMP/asc/chave.der" -out "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"; then
+            || ! openssl pkcs8 -topk8 -nocrypt -inform DER -in "$RUNNER_TEMP/asc/chave.der" -out "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"; then
             echo "::error::ASC_KEY_P8 não é uma chave .p8 válida (${#CORPO} caracteres em base64; o esperado é 200). Cole de novo o conteúdo inteiro do AuthKey_$ASC_KEY_ID.p8."
             exit 1
           fi
           rm -f "$RUNNER_TEMP/asc/chave.der"
+          # Só o cabeçalho e o nº de linhas, nunca o conteúdo.
+          echo "Formato da chave: $(head -1 "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"), $(wc -l < "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8") linhas"
 
       - name: Archive
         working-directory: ios/App
@@ -106,9 +109,10 @@ jobs:
       # Upload separado: o destination=upload do exportArchive falha com chave
       # de API ("No Accounts with App Store Connect Access").
       - name: Enviar ao App Store Connect
-        env:
-          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/asc
         run: |
+          # Pasta padrão onde o altool procura AuthKey_<id>.p8.
+          mkdir -p ~/.appstoreconnect/private_keys
+          cp "$RUNNER_TEMP"/asc/AuthKey_*.p8 ~/.appstoreconnect/private_keys/
           xcrun altool --upload-app -t ios \
             -f "$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)" \
             --apiKey "${{ secrets.ASC_KEY_ID }}" \
@@ -116,4 +120,4 @@ jobs:
 
       - name: Limpar chave
         if: always()
-        run: rm -rf "$RUNNER_TEMP/asc"
+        run: rm -rf "$RUNNER_TEMP/asc" ~/.appstoreconnect/private_keys
