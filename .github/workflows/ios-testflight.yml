@@ -22,7 +22,9 @@ permissions:
 
 jobs:
   ios:
-    runs-on: macos-15
+    # macos-26: a Apple só aceita builds com o SDK do iOS 26 (Xcode 26), e o
+    # Xcode padrão do macos-15 é o 16.x (erro 90725 no upload).
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -34,6 +36,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: xcodebuild -version
 
       - name: Build web + sync iOS
         run: |
