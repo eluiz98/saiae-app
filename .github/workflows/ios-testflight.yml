@@ -106,18 +106,21 @@ jobs:
             -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}"
 
-      # Upload separado: o destination=upload do exportArchive falha com chave
-      # de API ("No Accounts with App Store Connect Access").
+      # Upload pela API oficial (buildUploads): o destination=upload do
+      # exportArchive ("No Accounts with App Store Connect Access") e o altool
+      # ("Cannot verify client's JWT headers") recusam a mesma chave que a API aceita.
       - name: Enviar ao App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_APP_ID: '6822988902'
         run: |
-          # Pasta padrão onde o altool procura AuthKey_<id>.p8.
-          mkdir -p ~/.appstoreconnect/private_keys
-          cp "$RUNNER_TEMP"/asc/AuthKey_*.p8 ~/.appstoreconnect/private_keys/
-          xcrun altool --upload-app -t ios \
-            -f "$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)" \
-            --apiKey "${{ secrets.ASC_KEY_ID }}" \
-            --apiIssuer "${{ secrets.ASC_ISSUER_ID }}"
+          PLIST="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app/Info.plist"
+          VERSAO=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")
+          BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")
+          ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8" \
+            node scripts/enviar-build-asc.mjs "$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)" "$VERSAO" "$BUILD"
 
       - name: Limpar chave
         if: always()
-        run: rm -rf "$RUNNER_TEMP/asc" ~/.appstoreconnect/private_keys
+        run: rm -rf "$RUNNER_TEMP/asc"
